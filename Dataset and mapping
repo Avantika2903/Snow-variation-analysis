@@ -1,0 +1,55 @@
+var modis = ee.ImageCollection("MODIS/061/MOD10A1");
+print(modis.first());
+
+var modis = ee.ImageCollection("MODIS/061/MOD10A1");
+
+var adminL1 = ee.FeatureCollection("FAO/GAUL/2015/level1");
+var himachal = adminL1.filter(ee.Filter.eq('ADM1_NAME', 'Himachal Pradesh'));
+var valais     = adminL1.filter(ee.Filter.eq('ADM1_NAME', 'Valais'));
+var alaska   = ee.FeatureCollection("TIGER/2018/States").filter(ee.Filter.eq('NAME', 'Alaska'));
+
+function getSnow(start, end, region) {
+  return modis
+    .filterDate(start, end)
+    .map(function(img) {
+      var snow = img.select("NDSI_Snow_Cover");
+      var mask = img.select("NDSI_Snow_Cover_Basic_QA").lte(1);
+      return snow.updateMask(mask);
+    })
+    .mean()
+    .clip(region);
+}
+var regions = { himachal: himachal, valais: valais, alaska: alaska };
+
+var janHP  = getSnow('2025-01-01', '2025-01-31', himachal);
+var janValais  = getSnow('2025-01-01', '2025-01-31', valais);
+var janAK  = getSnow('2025-01-01', '2025-01-31', alaska);
+
+var marHP  = getSnow('2025-03-01', '2025-03-31', himachal);
+var marValais  = getSnow('2025-03-01', '2025-03-31', valais);
+var marAK  = getSnow('2025-03-01', '2025-03-31', alaska);
+
+var mayHP  = getSnow('2025-05-01', '2025-05-31', himachal);
+var mayValais  = getSnow('2025-05-01', '2025-05-31', valais);
+var mayAK  = getSnow('2025-05-01', '2025-05-31', alaska);
+
+var janVis = { min: 0, max: 100, palette: ['black', 'blue', 'cyan', 'white'] };
+var marVis = { min: 0, max: 100, palette: ['brown', 'yellow', 'lightgreen', 'green', 'white'] };
+var mayVis = { min: 0, max: 100, palette: ['red', 'orange', 'gold', 'lightyellow', 'white'] };
+
+Map.addLayer(janHP,   janVis, "Jan - Himachal Pradesh");
+Map.addLayer(janValais, janVis, "Jan - Valais");
+Map.addLayer(janAK,   janVis, "Jan - Alaska");
+
+// March
+Map.addLayer(marHP,   marVis, "Mar - Himachal Pradesh");
+Map.addLayer(marValais, marVis, "Mar - Valais");
+Map.addLayer(marAK,   marVis, "Mar - Alaska");
+
+// May
+Map.addLayer(mayHP,   mayVis, "May - Himachal Pradesh");
+Map.addLayer(mayValais, mayVis, "May - Valais");
+Map.addLayer(mayAK,   mayVis, "May - Alaska");
+
+// 7. Center Map on Himachal Pradesh
+Map.centerObject(himachal, 7);
