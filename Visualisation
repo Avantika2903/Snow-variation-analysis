@@ -1,0 +1,127 @@
+var modis = ee.ImageCollection("MODIS/061/MOD10A1");
+
+function getSnowPercent(image, region) {
+  var stats = image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: region,
+    scale: 500,
+    maxPixels: 1e13
+  });
+
+  return stats.get("NDSI_Snow_Cover");
+}
+var india = ee.FeatureCollection("FAO/GAUL/2015/level1");
+var himachal = india.filter(ee.Filter.eq('ADM1_NAME', 'Himachal Pradesh'));
+
+var switzerland = ee.FeatureCollection("FAO/GAUL/2015/level1");
+var valais = switzerland.filter(ee.Filter.eq('ADM1_NAME', 'Valais'));
+
+var states = ee.FeatureCollection("TIGER/2018/States");
+var alaska = states.filter(ee.Filter.eq('NAME', 'Alaska'));
+
+function getCleanSnow(start, end) {
+  var data = modis.filterDate(start, end);
+
+  var clean = data.map(function(img) {
+    var snow = img.select("NDSI_Snow_Cover");
+    var qa = img.select("NDSI_Snow_Cover_Basic_QA");
+
+    var mask = qa.lte(1);
+    return snow.updateMask(mask);
+  });
+
+  return clean.mean();
+}
+var janSnow = getCleanSnow('2025-01-01', '2025-01-31');
+var marSnow = getCleanSnow('2025-03-01', '2025-03-31');
+var junSnow = getCleanSnow('2025-06-01', '2025-06-30');
+
+var himJan = getSnowPercent(janSnow, himachal);
+var himMar = getSnowPercent(marSnow, himachal);
+var himJun = getSnowPercent(junSnow, himachal);
+
+// Switzerland
+var swiJan = getSnowPercent(janSnow, valais);
+var swiMar = getSnowPercent(marSnow, valais);
+var swiJun = getSnowPercent(junSnow, valais);
+
+// Alaska
+var alaJan = getSnowPercent(janSnow, alaska);
+var alaMar = getSnowPercent(marSnow, alaska);
+var alaJun = getSnowPercent(junSnow, alaska);
+
+function getMeltRate(snowStart, snowEnd, months) {
+  return ee.Number(snowStart).subtract(snowEnd).divide(months);
+}
+
+// Himachal
+var himRate1 = getMeltRate(himJan, himMar, 2);
+var himRate2 = getMeltRate(himMar, himJun, 3);
+
+// Valais
+var swiRate1 = getMeltRate(swiJan, swiMar, 2);
+var swiRate2 = getMeltRate(swiMar, swiJun, 3);
+
+// Alaska
+var alaRate1 = getMeltRate(alaJan, alaMar, 2);
+var alaRate2 = getMeltRate(alaMar, alaJun, 3);
+
+// Chart
+var rateData = ee.FeatureCollection([
+  ee.Feature(null, {
+    period: 'Jan→Mar (Winter-Spring)',
+    Himachal: himRate1,
+    Valais: swiRate1,
+    Alaska: alaRate1
+  }),
+  ee.Feature(null, {
+    period: 'Mar→Jun (Spring-Summer)',
+    Himachal: himRate2,
+    Valais: swiRate2,
+    Alaska: alaRate2
+  })
+]);
+
+var rateChart = ui.Chart.feature.byFeature(
+    rateData, 'period', ['Himachal', 'Valais', 'Alaska'])
+  .setChartType('ColumnChart')
+  .setOptions({
+    title: 'Snowmelt Rate by Season 2025',
+    hAxis: {title: 'Period'},
+    vAxis: {title: 'Melt Rate (% lost per month)'},
+    series: {
+      0: {label: 'Himachal Pradesh', color: 'blue'},
+      1: {label: 'Valais',           color: 'red'},
+      2: {label: 'Alaska',           color: 'green'}
+    },
+    bar: {groupWidth: '60%'}
+  });
+
+print(rateChart);
+var heatData = ee.FeatureCollection([
+  ee.Feature(null, {Region: 'Himachal', 'Jan-Mar': -1.90, 'Mar-Jun': 8.23}),
+  ee.Feature(null, {Region: 'Valais',   'Jan-Mar': 3.57,  'Mar-Jun': 12.94}),
+  ee.Feature(null, {Region: 'Alaska',   'Jan-Mar': 12.08, 'Mar-Jun': 17.73})
+]);
+
+var heatChart = ui.Chart.feature.byFeature(heatData, 'Region', ['Jan-Mar', 'Mar-Jun'])
+  .setChartType('Table')
+  .setOptions({
+    title: 'Snowmelt Rate Heatmap 2025 (% lost per month)',
+    allowHtml: true,
+    cssClassNames: {
+      tableRow: 'tableRow',
+      oddTableRow: 'oddTableRow'
+    },
+    colorFormat: {
+      ranges: [
+        {from: -2,  to: 0,  color: '#2166AC'},
+        {from: 0,   to: 5,  color: '#92C5DE'},
+        {from: 5,   to: 10, color: '#FDDBC7'},
+        {from: 10,  to: 15, color: '#D6604D'},
+        {from: 15,  to: 20, color: '#B2182B'}
+      ]
+    }
+  });
+
+print(heatChart);
