@@ -1,0 +1,75 @@
+var modis = ee.ImageCollection("MODIS/061/MOD10A1");
+
+var india = ee.FeatureCollection("FAO/GAUL/2015/level1");
+var himachal = india.filter(ee.Filter.eq('ADM1_NAME', 'Himachal Pradesh'));
+
+var switzerland = ee.FeatureCollection("FAO/GAUL/2015/level1");
+var valais = switzerland.filter(ee.Filter.eq('ADM1_NAME', 'Valais'));
+
+var states = ee.FeatureCollection("TIGER/2018/States");
+var alaska = states.filter(ee.Filter.eq('NAME', 'Alaska'));
+
+function getCleanSnow(start, end) {
+  var data = modis.filterDate(start, end);
+
+  var clean = data.map(function(img) {
+    var snow = img.select("NDSI_Snow_Cover");
+    var qa = img.select("NDSI_Snow_Cover_Basic_QA");
+
+    var mask = qa.lte(1);
+    return snow.updateMask(mask);
+  });
+
+  return clean.mean();
+}
+
+var janSnow = getCleanSnow('2025-01-01', '2025-01-31');
+var marSnow = getCleanSnow('2025-03-01', '2025-03-31');
+var junSnow = getCleanSnow('2025-06-01', '2025-06-30');
+function getSnowPercent(image, region) {
+  var stats = image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: region,
+    scale: 500,
+    maxPixels: 1e13
+  });
+
+  return stats.get("NDSI_Snow_Cover");
+}
+
+var himJan = getSnowPercent(janSnow, himachal);
+var himMar = getSnowPercent(marSnow, himachal);
+var himJun = getSnowPercent(junSnow, himachal);
+
+
+var swiJan = getSnowPercent(janSnow, valais);
+var swiMar = getSnowPercent(marSnow, valais);
+var swiJun = getSnowPercent(junSnow, valais);
+
+
+var alaJan = getSnowPercent(janSnow, alaska);
+var alaMar = getSnowPercent(marSnow, alaska);
+var alaJun = getSnowPercent(junSnow, alaska);
+
+function getMeltRate(snowStart, snowEnd, months) {
+  return ee.Number(snowStart).subtract(snowEnd).divide(months);
+}
+
+var himRate1 = getMeltRate(himJan, himMar, 2);
+var himRate2 = getMeltRate(himMar, himJun, 3);
+
+var swiRate1 = getMeltRate(swiJan, swiMar, 2);
+var swiRate2 = getMeltRate(swiMar, swiJun, 3);
+
+var alaRate1 = getMeltRate(alaJan, alaMar, 2);
+var alaRate2 = getMeltRate(alaMar, alaJun, 3);
+
+print("Himachal rate Jan-Mar:", himRate1);
+print("Himachal rate Mar-Jun:", himRate2);
+
+print("Valais rate Jan-Mar:", swiRate1);
+print("Valais rate Mar-Jun:", swiRate2);
+
+print("Alaska rate Jan-Mar:", alaRate1);
+print("Alaska rate Mar-Jun:", alaRate2);
+
